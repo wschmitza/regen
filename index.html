@@ -249,7 +249,7 @@ function render(data, loc, stale){
 
   $("placeBtn").textContent = loc.name;
   $("foot").innerHTML = (stale ? "⚠︎ Offline – zuletzt geladene Daten<br>" : "") +
-    "Stand: " + hhmm(now) + " Uhr · Daten: <a href='https://open-meteo.com/' target='_blank' rel='noopener'>Open-Meteo.com</a><br>" +
+    "Version 5 · Stand: " + hhmm(now) + " Uhr · Daten: <a href='https://open-meteo.com/' target='_blank' rel='noopener'>Open-Meteo.com</a><br>" +
     "Prognose-Werte, keine Garantie. Die 15-Minuten-Werte sind in den ersten ca. 2 Std. am genauesten.";
 }
 
@@ -452,7 +452,7 @@ $("q").addEventListener("input", e => { clearTimeout(qTimer); qTimer = setTimeou
 document.addEventListener("visibilitychange", () => { if (!document.hidden && Date.now() - lastLoad > 5*60*1000) load(); });
 setInterval(() => { if (!document.hidden && Date.now() - lastLoad > 10*60*1000) load(); }, 60000);
 
-if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then(r => r.update()).catch(() => {});
 
 /* Start: gespeicherter Ort, sonst einmalig GPS versuchen, Fallback Hannover */
 if (loc){ $("placeBtn").textContent = loc.name; load(); }
