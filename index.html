@@ -50,14 +50,14 @@
   .err{background:#5b2330;border-radius:14px;padding:12px 14px;margin-top:14px;font-size:14px}
   .hidden{display:none !important}
   /* Radar */
-  #map{height:330px;border-radius:12px;overflow:hidden;background:#0b1b33}
-  .leaflet-container{font:inherit;background:#0b1b33}
-  .leaflet-control-attribution{font-size:10px;background:rgba(10,25,48,.75)!important;color:var(--mut)}
-  .leaflet-control-attribution a{color:var(--mut)}
+  #map{height:330px;border-radius:12px;overflow:hidden;background:#dfe6ee}
+  .leaflet-container{font:inherit;background:#dfe6ee}
+  .leaflet-control-attribution{font-size:10px;background:rgba(255,255,255,.8)!important;color:#445}
+  .leaflet-control-attribution a{color:#445}
   .tl{display:flex;align-items:center;gap:10px;margin-top:10px}
   .tl input{flex:1;accent-color:#6cc4ff}
   .pbtn{width:40px;height:40px;border:0;border-radius:12px;background:rgba(255,255,255,.12);color:var(--txt);font-size:16px}
-  #frameLbl{min-width:120px;font-size:13px;text-align:right;color:var(--mut);font-variant-numeric:tabular-nums}
+  #frameLbl{min-width:140px;white-space:nowrap;font-size:13px;text-align:right;color:var(--mut);font-variant-numeric:tabular-nums}
   #frameLbl.fc{color:#ffd36c}
   .rnote{font-size:12px;color:var(--mut);margin-top:6px}
   /* Suche */
@@ -259,18 +259,28 @@ const WMS_URL = "https://maps.dwd.de/geoserver/dwd/wms";
 const CAP_URL = "https://maps.dwd.de/geoserver/dwd/Niederschlagsradar/ows?service=WMS&version=1.3.0&request=GetCapabilities";
 const RADAR_LAYER = "dwd:Niederschlagsradar";
 const STEP = 15 * 60000, BACK = 60 * 60000;
-let map = null, marker = null, rLayers = [], rTimes = [], rCur = 0, rTimer = null, rLoaded = 0, rTileErr = 0, rTileOk = 0;
+let map = null, marker = null, rLayers = [], rTimes = [], rReady = [], rCur = 0, rTimer = null, rLoaded = 0, rGen = 0;
+const RADAR_BOUNDS = typeof L !== "undefined" ? L.latLngBounds([45.5, 1.5], [56.5, 18.5]) : null;
 
 function initMap(l){
   if (typeof L === "undefined"){ $("radarNote").textContent = "Kartenbibliothek nicht geladen."; return; }
   map = L.map("map", { zoomControl: false, attributionControl: true }).setView([l.lat, l.lon], 8);
   map.createPane("labels"); map.getPane("labels").style.zIndex = 650; map.getPane("labels").style.pointerEvents = "none";
   const osm = '© <a href="https://www.openstreetmap.org/copyright">OSM</a> © <a href="https://carto.com/attributions">CARTO</a>';
-  L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png", { subdomains: "abcd", maxZoom: 12, minZoom: 5, attribution: osm }).addTo(map);
-  L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png", { subdomains: "abcd", maxZoom: 12, minZoom: 5, pane: "labels" }).addTo(map);
+  const base = L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png", { subdomains: "abcd", maxZoom: 12, minZoom: 5, attribution: osm }).addTo(map);
+  const labels = L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png", { subdomains: "abcd", maxZoom: 12, minZoom: 5, pane: "labels" }).addTo(map);
+  // Falls CARTO nicht lädt: auf OpenStreetMap umschalten
+  let bOk = 0, bErr = 0, switched = false;
+  base.on("tileload", () => bOk++);
+  base.on("tileerror", () => {
+    if (++bErr > 3 && !bOk && !switched){
+      switched = true; map.removeLayer(base); map.removeLayer(labels);
+      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 12, minZoom: 5, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(map);
+    }
+  });
   map.attributionControl.setPrefix(false);
   map.attributionControl.addAttribution('Radar: <a href="https://www.dwd.de/">Deutscher Wetterdienst</a>');
-  marker = L.circleMarker([l.lat, l.lon], { radius: 6, color: "#fff", weight: 2, fillColor: "#ff5a5a", fillOpacity: 1, pane: "labels" }).addTo(map);
+  marker = L.circleMarker([l.lat, l.lon], { radius: 7, color: "#fff", weight: 3, fillColor: "#e8233a", fillOpacity: 1, pane: "labels" }).addTo(map);
 }
 
 function moveMap(l){
@@ -312,7 +322,7 @@ function fmtClock(t){ return new Date(t).toLocaleTimeString("de-DE", { hour: "2-
 function showFrame(i){
   if (!rLayers.length) return;
   rCur = Math.max(0, Math.min(i, rLayers.length - 1));
-  rLayers.forEach((l, k) => l.setOpacity(k === rCur ? 0.8 : 0));
+  rLayers.forEach((l, k) => l && l.setOpacity(k === rCur ? 0.8 : 0));
   $("slider").value = rCur;
   const t = rTimes[rCur], d = Math.round((t - Date.now()) / 60000), lbl = $("frameLbl");
   if (d > 2){ lbl.textContent = fmtClock(t) + " · Prognose +" + d + "′"; lbl.classList.add("fc"); }
@@ -330,22 +340,43 @@ async function loadRadar(force){
   for (let t = end; t >= now - BACK; t -= STEP) if (set.has(t)) sel.unshift(t);
   if (!sel.length) sel.push(end);
   stopPlay();
-  rLayers.forEach(l => map.removeLayer(l));
-  rTileErr = 0; rTileOk = 0;
-  rTimes = sel;
-  rLayers = sel.map(t => {
-    const lay = L.tileLayer.wms(WMS_URL, {
-      layers: RADAR_LAYER, format: "image/png", transparent: true, version: "1.3.0",
-      time: new Date(t).toISOString(), tileSize: 512, opacity: 0, maxZoom: 12
-    });
-    lay.on("tileload", () => { rTileOk++; });
-    lay.on("tileerror", () => { rTileErr++; if (!rTileOk && rTileErr > 6) $("radarNote").textContent = "Radar derzeit nicht erreichbar."; });
-    return lay.addTo(map);
-  });
-  $("slider").max = rLayers.length - 1;
-  // Startbild: letzte Messung (letzter Zeitpunkt <= jetzt)
+  rLayers.forEach(l => l && map.removeLayer(l));
+  rTimes = sel; rLayers = []; rReady = new Array(sel.length).fill(false);
+  $("slider").max = sel.length - 1;
   let start = 0; rTimes.forEach((t, k) => { if (t <= now) start = k; });
+  // Ein Bild für das ganze Radargebiet (ca. 1 km pro Pixel) – je Zeitpunkt nur ein Abruf
+  const sw = L.CRS.EPSG3857.project(RADAR_BOUNDS.getSouthWest()), ne = L.CRS.EPSG3857.project(RADAR_BOUNDS.getNorthEast());
+  const W = 1000, H = Math.round(W * (ne.y - sw.y) / (ne.x - sw.x));
+  const url = t => WMS_URL + "?service=WMS&version=1.3.0&request=GetMap&layers=" + encodeURIComponent(RADAR_LAYER) +
+    "&styles=&format=image/png&transparent=true&crs=EPSG:3857&bbox=" + [sw.x, sw.y, ne.x, ne.y].map(v => v.toFixed(0)).join(",") +
+    "&width=" + W + "&height=" + H + "&time=" + encodeURIComponent(new Date(t).toISOString());
+  rLayers = new Array(sel.length).fill(null);
+  const gen = ++rGen;
+  // Reihenfolge: aktuelles Bild zuerst, dann Vorhersage, dann Vergangenheit
+  const order = [start, ...sel.map((_, k) => k).filter(k => k > start), ...sel.map((_, k) => k).filter(k => k < start).reverse()];
   showFrame(start);
+  let failed = 0;
+  for (const k of order){
+    if (gen !== rGen) return; // neuer Ladevorgang hat übernommen
+    const ok = await new Promise(res => {
+      const lay = L.imageOverlay(url(sel[k]), RADAR_BOUNDS, { opacity: 0, interactive: false });
+      lay.once("load", () => res(true)); lay.once("error", () => res(false));
+      rLayers[k] = lay.addTo(map);
+    });
+    if (gen !== rGen) return;
+    rReady[k] = ok; if (!ok) failed++;
+    updateProgress();
+    if (k === rCur) showFrame(rCur);
+  }
+  $("radarNote").textContent = failed === sel.length ? "Radar derzeit nicht erreichbar." : "";
+}
+
+function updateProgress(){
+  const n = rReady.filter(Boolean).length, all = rReady.length;
+  $("playBtn").disabled = n < all;
+  $("playBtn").style.opacity = n < all ? .4 : 1;
+  if (n < all) $("radarNote").textContent = "Radar lädt … " + n + "/" + all;
+  else $("radarNote").textContent = "";
 }
 
 function stopPlay(){ clearInterval(rTimer); rTimer = null; $("playBtn").textContent = "▶"; }
@@ -353,7 +384,7 @@ function togglePlay(){
   if (rTimer){ stopPlay(); return; }
   $("playBtn").textContent = "❚❚";
   if (rCur >= rLayers.length - 1) showFrame(0);
-  rTimer = setInterval(() => { showFrame(rCur >= rLayers.length - 1 ? 0 : rCur + 1); }, 800);
+  rTimer = setInterval(() => { showFrame(rCur >= rLayers.length - 1 ? 0 : rCur + 1); }, 700);
 }
 $("playBtn").addEventListener("click", togglePlay);
 $("slider").addEventListener("input", e => { stopPlay(); showFrame(+e.target.value); });
