@@ -252,7 +252,7 @@ function render(data, loc, stale){
 
   $("placeBtn").textContent = loc.name;
   $("foot").innerHTML = (stale ? "⚠︎ Offline – zuletzt geladene Daten<br>" : "") +
-    "Version 6 · Stand: " + hhmm(now) + " Uhr · Daten: <a href='https://open-meteo.com/' target='_blank' rel='noopener'>Open-Meteo.com</a><br>" +
+    "Version 7 · Stand: " + hhmm(now) + " Uhr · Daten: <a href='https://open-meteo.com/' target='_blank' rel='noopener'>Open-Meteo.com</a><br>" +
     "Prognose-Werte, keine Garantie. Die 15-Minuten-Werte sind in den ersten ca. 2 Std. am genauesten.";
 }
 
@@ -262,7 +262,7 @@ const WMS_URL = "https://maps.dwd.de/geoserver/dwd/wms";
 const CAP_URL = "https://maps.dwd.de/geoserver/dwd/Niederschlagsradar/ows?service=WMS&version=1.3.0&request=GetCapabilities";
 const RADAR_LAYER = "dwd:Niederschlagsradar";
 const STEP = 15 * 60000, BACK = 60 * 60000;
-let map = null, marker = null, rLayers = [], rTimes = [], rReady = [], rCur = 0, rTimer = null, rLoaded = 0, rGen = 0;
+let map = null, marker = null, rLayers = [], rTimes = [], rReady = [], rDone = [], rCur = 0, rTimer = null, rLoaded = 0, rGen = 0;
 const RADAR_BOUNDS = typeof L !== "undefined" ? L.latLngBounds([45.5, 1.5], [56.5, 18.5]) : null;
 
 function initMap(l){
@@ -335,7 +335,7 @@ async function loadRadar(force){
   if (!sel.length) sel.push(end);
   stopPlay();
   rLayers.forEach(l => l && map.removeLayer(l));
-  rTimes = sel; rLayers = []; rReady = new Array(sel.length).fill(false);
+  rTimes = sel; rLayers = []; rReady = new Array(sel.length).fill(false); rDone = new Array(sel.length).fill(false);
   $("slider").max = sel.length - 1;
   let start = 0; rTimes.forEach((t, k) => { if (t <= now) start = k; });
   // Ein Bild für das ganze Radargebiet (ca. 1 km pro Pixel) – je Zeitpunkt nur ein Abruf
@@ -358,27 +358,31 @@ async function loadRadar(force){
       rLayers[k] = lay.addTo(map);
     });
     if (gen !== rGen) return;
-    rReady[k] = ok; if (!ok) failed++;
+    rReady[k] = ok; rDone[k] = true; if (!ok) failed++;
     updateProgress();
     if (k === rCur) showFrame(rCur);
   }
-  $("radarNote").textContent = failed === sel.length ? "Radar derzeit nicht erreichbar." : "";
+  if (failed === sel.length) $("radarNote").textContent = "Radar derzeit nicht erreichbar.";
 }
 
 function updateProgress(){
-  const n = rReady.filter(Boolean).length, all = rReady.length;
-  $("playBtn").disabled = n < all;
-  $("playBtn").style.opacity = n < all ? .4 : 1;
-  if (n < all) $("radarNote").textContent = "Radar lädt … " + n + "/" + all;
+  const done = rDone.filter(Boolean).length, ok = rReady.filter(Boolean).length, all = rReady.length;
+  const busy = done < all;
+  $("playBtn").disabled = busy || ok < 2;
+  $("playBtn").style.opacity = $("playBtn").disabled ? .4 : 1;
+  if (busy) $("radarNote").textContent = "Radar lädt … " + done + "/" + all;
+  else if (ok < all) $("radarNote").textContent = (all - ok) + " von " + all + " Radarbildern nicht verfügbar – Animation zeigt die übrigen.";
   else $("radarNote").textContent = "";
 }
+// nächstes bzw. vorheriges geladenes Bild
+function nextReady(i){ for (let k = 1; k <= rReady.length; k++){ const j = (i + k) % rReady.length; if (rReady[j]) return j; } return i; }
 
 function stopPlay(){ clearInterval(rTimer); rTimer = null; $("playBtn").textContent = "▶"; }
 function togglePlay(){
   if (rTimer){ stopPlay(); return; }
   $("playBtn").textContent = "❚❚";
-  if (rCur >= rLayers.length - 1) showFrame(0);
-  rTimer = setInterval(() => { showFrame(rCur >= rLayers.length - 1 ? 0 : rCur + 1); }, 700);
+  if (!rReady[rCur]) showFrame(nextReady(rCur));
+  rTimer = setInterval(() => { showFrame(nextReady(rCur)); }, 700);
 }
 $("playBtn").addEventListener("click", togglePlay);
 $("slider").addEventListener("input", e => { stopPlay(); showFrame(+e.target.value); });
