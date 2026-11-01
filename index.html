@@ -266,18 +266,9 @@ function initMap(l){
   if (typeof L === "undefined"){ $("radarNote").textContent = "Kartenbibliothek nicht geladen."; return; }
   map = L.map("map", { zoomControl: false, attributionControl: true }).setView([l.lat, l.lon], 8);
   map.createPane("labels"); map.getPane("labels").style.zIndex = 650; map.getPane("labels").style.pointerEvents = "none";
-  const osm = '© <a href="https://www.openstreetmap.org/copyright">OSM</a> © <a href="https://carto.com/attributions">CARTO</a>';
-  const base = L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png", { subdomains: "abcd", maxZoom: 12, minZoom: 5, attribution: osm }).addTo(map);
-  const labels = L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png", { subdomains: "abcd", maxZoom: 12, minZoom: 5, pane: "labels" }).addTo(map);
-  // Falls CARTO nicht lädt: auf OpenStreetMap umschalten
-  let bOk = 0, bErr = 0, switched = false;
-  base.on("tileload", () => bOk++);
-  base.on("tileerror", () => {
-    if (++bErr > 3 && !bOk && !switched){
-      switched = true; map.removeLayer(base); map.removeLayer(labels);
-      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 12, minZoom: 5, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(map);
-    }
-  });
+  const osm = '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
+  // OpenStreetMap: frei nutzbar ohne API-Schlüssel (Quellenangabe Pflicht)
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 12, minZoom: 5, attribution: osm }).addTo(map);
   map.attributionControl.setPrefix(false);
   map.attributionControl.addAttribution('Radar: <a href="https://www.dwd.de/">Deutscher Wetterdienst</a>');
   marker = L.circleMarker([l.lat, l.lon], { radius: 7, color: "#fff", weight: 3, fillColor: "#e8233a", fillOpacity: 1, pane: "labels" }).addTo(map);
