@@ -54,6 +54,9 @@
   .leaflet-container{font:inherit;background:#dfe6ee}
   .leaflet-control-attribution{font-size:10px;background:rgba(255,255,255,.8)!important;color:#445}
   .leaflet-control-attribution a{color:#445}
+  /* Karte entsättigen, Radar kräftig und dunkler */
+  #map .leaflet-tile-pane{filter:grayscale(.85) contrast(.95) brightness(1.02)}
+  #map .leaflet-overlay-pane img{filter:saturate(2.4) contrast(1.5) brightness(.75)}
   .tl{display:flex;align-items:center;gap:10px;margin-top:10px}
   .tl input{flex:1;accent-color:#6cc4ff}
   .pbtn{width:40px;height:40px;border:0;border-radius:12px;background:rgba(255,255,255,.12);color:var(--txt);font-size:16px}
@@ -249,7 +252,7 @@ function render(data, loc, stale){
 
   $("placeBtn").textContent = loc.name;
   $("foot").innerHTML = (stale ? "⚠︎ Offline – zuletzt geladene Daten<br>" : "") +
-    "Version 5 · Stand: " + hhmm(now) + " Uhr · Daten: <a href='https://open-meteo.com/' target='_blank' rel='noopener'>Open-Meteo.com</a><br>" +
+    "Version 6 · Stand: " + hhmm(now) + " Uhr · Daten: <a href='https://open-meteo.com/' target='_blank' rel='noopener'>Open-Meteo.com</a><br>" +
     "Prognose-Werte, keine Garantie. Die 15-Minuten-Werte sind in den ersten ca. 2 Std. am genauesten.";
 }
 
@@ -313,7 +316,7 @@ function fmtClock(t){ return new Date(t).toLocaleTimeString("de-DE", { hour: "2-
 function showFrame(i){
   if (!rLayers.length) return;
   rCur = Math.max(0, Math.min(i, rLayers.length - 1));
-  rLayers.forEach((l, k) => l && l.setOpacity(k === rCur ? 0.8 : 0));
+  rLayers.forEach((l, k) => l && l.setOpacity(k === rCur ? 0.95 : 0));
   $("slider").value = rCur;
   const t = rTimes[rCur], d = Math.round((t - Date.now()) / 60000), lbl = $("frameLbl");
   if (d > 2){ lbl.textContent = fmtClock(t) + " · Prognose +" + d + "′"; lbl.classList.add("fc"); }
